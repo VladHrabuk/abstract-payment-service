@@ -8,7 +8,7 @@ import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
   namespace: '/ws/payments',
-  cors: { origin: '*' },
+  cors: { origin: '*' }, // for development purposes
 })
 export class PaymentStatusGateway
   implements OnGatewayConnection, OnGatewayDisconnect

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PaymentFactoryService } from './services/payment-factory.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PaymentStatusGateway } from './gateways/payments.gateways';
@@ -11,18 +15,32 @@ export class PaymentsService {
     private readonly paymentStatusGateway: PaymentStatusGateway,
   ) {}
 
+  async getAllPayments() {
+    return this.prismaService.payment.findMany();
+  }
+
+  async getPaymentById(id: string) {
+    const payment = await this.prismaService.payment.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${id} not found`);
+    }
+
+    return payment;
+  }
+
   async createPayment(
     amount: number,
     method: string,
     details: Record<string, any>,
   ) {
-    // Валідація методу
     const paymentService = this.paymentFactoryService.getPaymentService(method);
     if (!paymentService) {
       throw new BadRequestException('Unsupported payment method');
     }
 
-    // Створення платежу
     const payment = await this.prismaService.payment.create({
       data: {
         amount,
@@ -31,7 +49,6 @@ export class PaymentsService {
       },
     });
 
-    // Запуск асинхронного процесу обробки
     this.processPayment(payment.id.toString(), paymentService);
 
     return {
@@ -43,7 +60,6 @@ export class PaymentsService {
   private async processPayment(paymentId: string, paymentService: any) {
     const serviceName = paymentService.constructor.name;
 
-    // Емітуємо початковий статус
     this.paymentStatusGateway.sendPaymentStatus(
       paymentId,
       'processing',
@@ -52,21 +68,16 @@ export class PaymentsService {
 
     let status = 'processing';
 
-    // Обробка з оновленням кожні 3 секунди
     for (let i = 0; i < 3; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 3000)); // Очікування 3 секунди
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       this.paymentStatusGateway.sendPaymentStatus(
         paymentId,
         status,
         serviceName,
       );
     }
-
-    // Завершення через 10 секунд
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // Додаткові 1 секунда
     status = 'successful';
 
-    // Оновлення бази даних і надсилання статусу
     await this.prismaService.payment.update({
       where: { id: Number(paymentId) },
       data: { status },
